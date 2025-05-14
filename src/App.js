@@ -3,6 +3,9 @@ import axios from "axios";
 import './App.css';
 import Lottie from "lottie-react";
 
+// Set the backend API base URL
+const API_BASE_URL = 'https://dzr-backend.onrender.com';
+
 function App() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [activeRows, setActiveRows] = useState([]);
@@ -38,7 +41,7 @@ function App() {
 
   const fetchRows = async () => {
     try {
-      const res = await axios.get("http://127.0.0.1:5000/api/rows");
+      const res = await axios.get(`${API_BASE_URL}/api/rows`);
       setActiveRows(res.data.active);
       setArchivedRows(res.data.archived);
     } catch (err) {
@@ -93,7 +96,7 @@ function App() {
       formData.append("files", file);
     }
     try {
-      const res = await axios.post("http://127.0.0.1:5000/api/upload", formData, {
+      const res = await axios.post(`${API_BASE_URL}/api/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -139,7 +142,7 @@ function App() {
 
   const handleDelete = async (id) => {
     try {
-      await axios.delete(`http://127.0.0.1:5000/api/row/${id}`);
+      await axios.delete(`${API_BASE_URL}/api/row/${id}`);
       await fetchRows();
     } catch (err) {
       alert("Failed to delete row.");
@@ -149,7 +152,7 @@ function App() {
 
   const handleUnarchive = async (id) => {
     try {
-      await axios.post(`http://127.0.0.1:5000/api/row/${id}/unarchive`);
+      await axios.post(`${API_BASE_URL}/api/row/${id}/unarchive`);
       await fetchRows();
     } catch (err) {
       alert("Failed to retrieve row.");
@@ -164,7 +167,7 @@ function App() {
 
   const handleSaveNotes = async () => {
     try {
-      await axios.post(`http://127.0.0.1:5000/api/row/${notesPopup.row.id}/notes`, { notes: notesPopup.value });
+      await axios.post(`${API_BASE_URL}/api/row/${notesPopup.row.id}/notes`, { notes: notesPopup.value });
       setNotesPopup({ open: false, row: null, value: "" });
       await fetchRows();
     } catch (err) {
@@ -176,7 +179,7 @@ function App() {
   // Starred toggle handler
   const handleToggleStarred = async (row) => {
     try {
-      await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/starred`, { starred: !row.starred });
+      await axios.post(`${API_BASE_URL}/api/row/${row.id}/starred`, { starred: !row.starred });
       await fetchRows();
     } catch (err) {
       alert("Failed to update star.");
@@ -512,7 +515,7 @@ function App() {
                           const newValue = e.target.value;
                           setActiveRows(prev => prev.map(r => r.id === row.id ? { ...r, assigned_to: newValue } : r));
                           try {
-                            await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/assigned_to`, { assigned_to: newValue });
+                            await axios.post(`${API_BASE_URL}/api/row/${row.id}/assigned_to`, { assigned_to: newValue });
                           } catch (err) {
                             alert('Failed to update assignment.');
                             console.error(err);
@@ -630,15 +633,15 @@ function App() {
                 onClick={async () => {
                   const row = archivePopup.row;
                   // 1. Update assigned_to
-                  await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/assigned_to`, { assigned_to: archivePopup.doctor });
+                  await axios.post(`${API_BASE_URL}/api/row/${row.id}/assigned_to`, { assigned_to: archivePopup.doctor });
                   // 2. Optionally store result color
                   try {
-                    await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/archive_result`, { result_color: archivePopup.result });
+                    await axios.post(`${API_BASE_URL}/api/row/${row.id}/archive_result`, { result_color: archivePopup.result });
                   } catch (e) { /* ignore if endpoint doesn't exist */ }
                   // 3. Archive the row with correct headers and JSON body
                   try {
                     await axios.post(
-                      `http://127.0.0.1:5000/api/row/${row.id}/archive`,
+                      `${API_BASE_URL}/api/row/${row.id}/archive`,
                       { archive_result: archivePopup.result },
                       { headers: { 'Content-Type': 'application/json' } }
                     );
