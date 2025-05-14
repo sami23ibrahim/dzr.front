@@ -15,6 +15,15 @@ function App() {
   const [showStarredOnly, setShowStarredOnly] = useState(false);
   const [noDataMessage, setNoDataMessage] = useState("");
   const [loadingAnimData, setLoadingAnimData] = useState(null);
+  const [archivePopup, setArchivePopup] = useState({ open: false, row: null, doctor: '', result: '' });
+  const [colorFilter, setColorFilter] = useState('');
+
+  // Map internal doctor values to display names
+  const doctorDisplayNames = {
+    "Dr. A": "Dr. Hakam",
+    "Dr. B": "Dr. Fabian",
+    "Dr. C": "Dr. Prabh"
+  };
 
   // Fetch all rows from backend on load
   useEffect(() => {
@@ -128,16 +137,6 @@ function App() {
     setLoading(false);
   };
 
-  const handleDone = async (id) => {
-    try {
-      await axios.post(`http://127.0.0.1:5000/api/row/${id}/archive`);
-      await fetchRows();
-    } catch (err) {
-      alert("Failed to archive row.");
-      console.error(err);
-    }
-  };
-
   const handleDelete = async (id) => {
     try {
       await axios.delete(`http://127.0.0.1:5000/api/row/${id}`);
@@ -198,6 +197,28 @@ function App() {
   if (showStarredOnly) {
     rowsToDisplay = rowsToDisplay.filter(row => row.starred);
   }
+  // Color filter for archived rows
+  if (view === 'archived' && colorFilter) {
+    rowsToDisplay = rowsToDisplay.filter(row => row.archive_result === colorFilter);
+  }
+
+  // Helper to parse European-formatted Betrag values
+  const parseBetrag = val => {
+    if (!val) return 0;
+    let str = val.toString().replace(/[^\d,.-]/g, ''); // keep digits, comma, dot, minus
+    str = str.replace(/\./g, ''); // remove thousands separator
+    str = str.replace(/,/g, '.'); // replace decimal comma with dot
+    return parseFloat(str) || 0;
+  };
+
+  // Helper to format Betrag with sign and color for archived rows
+  const formatBetrag = (row) => {
+    const val = parseBetrag(row["Betrag"]);
+    if (view === 'archived' && row.archive_result === 'green') {
+      return <span style={{ color: 'green' }}>+{Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+    }
+    return <span style={{ color: 'red' }}>{val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+  };
 
   return (
     <>
@@ -348,7 +369,104 @@ function App() {
             <span style={{ color: "gold", fontSize: "1.2em" }}>★</span> Only Starred
           </label>
         </div>
+        {/* Color filter for archived view */}
+        {view === 'archived' && (
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontWeight: 500 }}>Filter by Result:</span>
+            <button
+              style={{ background: colorFilter === 'red' ? 'red' : '#eee', color: colorFilter === 'red' ? 'white' : 'red', borderRadius: 8, padding: '2px 12px', border: 'none', fontWeight: 600 }}
+              onClick={() => setColorFilter('red')}
+            >Loss</button>
+            <button
+              style={{ background: colorFilter === 'green' ? 'green' : '#eee', color: colorFilter === 'green' ? 'white' : 'green', borderRadius: 8, padding: '2px 12px', border: 'none', fontWeight: 600 }}
+              onClick={() => setColorFilter('green')}
+            >Gain</button>
+            <button
+              style={{ background: colorFilter === 'orange' ? 'orange' : '#eee', color: colorFilter === 'orange' ? 'white' : 'orange', borderRadius: 8, padding: '2px 12px', border: 'none', fontWeight: 600 }}
+              onClick={() => setColorFilter('orange')}
+            >No Answer</button>
+            <button
+              style={{ background: colorFilter === '' ? '#2563eb' : '#eee', color: colorFilter === '' ? 'white' : 'black', borderRadius: 8, padding: '2px 12px', border: 'none', fontWeight: 600 }}
+              onClick={() => setColorFilter('')}
+            >All</button>
+          </div>
+        )}
       </div>
+      {/* Betrag total card at top right for active view */}
+      {view === 'active' && rowsToDisplay.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: 32,
+          right: 48,
+          background: '#f8fafc',
+          borderRadius: 16,
+          boxShadow: '0 4px 24px #0002',
+          padding: '18px 36px',
+          fontWeight: 800,
+          color: 'red',
+          fontSize: '1.18em',
+          letterSpacing: '0.01em',
+          fontFamily: 'inherit',
+          zIndex: 10
+        }}>
+          Total: {rowsToDisplay.reduce((sum, row) => sum + parseBetrag(row["Betrag"]), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+      )}
+      {/* Three summary cards for archived view, one for each result color */}
+      {view === 'archived' && rowsToDisplay.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: 32,
+          right: 48,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 18,
+          zIndex: 10
+        }}>
+          {/* Loss (red) */}
+          <div style={{
+            background: '#f8fafc',
+            borderRadius: 16,
+            boxShadow: '0 4px 24px #0002',
+            padding: '16px 28px',
+            fontWeight: 800,
+            color: 'red',
+            fontSize: '1.08em',
+            minWidth: 120,
+            textAlign: 'center'
+          }}>
+            Loss: {archivedRows.filter(r => r.archive_result === 'red').reduce((sum, row) => sum + parseBetrag(row["Betrag"]), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          {/* Gain (green) */}
+          <div style={{
+            background: '#f8fafc',
+            borderRadius: 16,
+            boxShadow: '0 4px 24px #0002',
+            padding: '16px 28px',
+            fontWeight: 800,
+            color: 'green',
+            fontSize: '1.08em',
+            minWidth: 120,
+            textAlign: 'center'
+          }}>
+            Gain: +{Math.abs(archivedRows.filter(r => r.archive_result === 'green').reduce((sum, row) => sum + parseBetrag(row["Betrag"]), 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          {/* No Answer (orange) */}
+          <div style={{
+            background: '#f8fafc',
+            borderRadius: 16,
+            boxShadow: '0 4px 24px #0002',
+            padding: '16px 28px',
+            fontWeight: 800,
+            color: 'orange',
+            fontSize: '1.08em',
+            minWidth: 120,
+            textAlign: 'center'
+          }}>
+            No Answer: {archivedRows.filter(r => r.archive_result === 'orange').reduce((sum, row) => sum + parseBetrag(row["Betrag"]), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+      )}
       {rowsToDisplay.length > 0 && (
         <div className="table-container">
           <table>
@@ -361,6 +479,11 @@ function App() {
                 <th>Ihre Rechnungs-Nr.</th>
                 <th>Betrag</th>
                 <th>Billing Date</th>
+                {view === 'active' ? (
+                  <th>Assigned To</th>
+                ) : (
+                  <th>Handled By</th>
+                )}
                 <th>Notes</th>
                 <th>Action</th>
               </tr>
@@ -379,8 +502,32 @@ function App() {
                   <td>{row["Rechnungsempfängers"]}</td>
                   <td>{row["Rechnungs-Nr. DZR"]}</td>
                   <td>{row["Ihre Rechnungs-Nr."]}</td>
-                  <td>{row["Betrag"]}</td>
+                  <td>{formatBetrag(row)}</td>
                   <td>{row["Billing Date"]}</td>
+                  {view === 'active' ? (
+                    <td>
+                      <select
+                        value={row.assigned_to || ''}
+                        onChange={async (e) => {
+                          const newValue = e.target.value;
+                          setActiveRows(prev => prev.map(r => r.id === row.id ? { ...r, assigned_to: newValue } : r));
+                          try {
+                            await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/assigned_to`, { assigned_to: newValue });
+                          } catch (err) {
+                            alert('Failed to update assignment.');
+                            console.error(err);
+                          }
+                        }}
+                      >
+                        <option value=""></option>
+                        <option value="Dr. A">Dr. Hakam</option>
+                        <option value="Dr. B">Dr. Fabian</option>
+                        <option value="Dr. C">Dr. Prabh</option>
+                      </select>
+                    </td>
+                  ) : (
+                    <td>{doctorDisplayNames[row.handled_by] || row.handled_by || ''}</td>
+                  )}
                   <td>
                     <button className="notes-btn" onClick={() => handleOpenNotes(row)}>
                       {row.notes && row.notes.length > 0 ? "📝" : "Add"}
@@ -389,7 +536,7 @@ function App() {
                   <td>
                     {view === 'active' && (
                       <>
-                        <button onClick={() => handleDone(row.id)}>Archive</button>
+                        <button onClick={() => setArchivePopup({ open: true, row, doctor: '', result: '' })}>Archive</button>
                         <button style={{ marginLeft: 8, color: "red" }} onClick={() => handleDelete(row.id)}>Delete</button>
                       </>
                     )}
@@ -400,6 +547,28 @@ function App() {
                       </>
                     )}
                   </td>
+                  {view === 'archived' && (
+                    <td>
+                      {row.archive_result && ['red', 'green', 'orange'].includes(row.archive_result) && (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            width: 16,
+                            height: 16,
+                            borderRadius: '50%',
+                            backgroundColor:
+                              row.archive_result === 'red'
+                                ? 'red'
+                                : row.archive_result === 'green'
+                                ? 'green'
+                                : row.archive_result === 'orange'
+                                ? 'orange'
+                                : 'transparent',
+                          }}
+                        />
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -419,6 +588,69 @@ function App() {
             <div style={{ marginTop: 12, textAlign: "right" }}>
               <button onClick={() => setNotesPopup({ open: false, row: null, value: "" })} style={{ marginRight: 8 }}>Cancel</button>
               <button onClick={handleSaveNotes}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Archive Popup Modal */}
+      {archivePopup.open && (
+        <div className="popup-overlay">
+          <div className="popup-card">
+            <h3>Archive Row</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label><b>Assign to Doctor:</b></label><br />
+              <select
+                value={archivePopup.doctor}
+                onChange={e => setArchivePopup(p => ({ ...p, doctor: e.target.value }))}
+                style={{ width: '100%', marginBottom: 10 }}
+              >
+                <option value="">-- Select Doctor --</option>
+                <option value="Dr. A">Dr. Hakam</option>
+                <option value="Dr. B">Dr. Fabian</option>
+                <option value="Dr. C">Dr. Prabh</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label><b>Result:</b></label><br />
+              <select
+                value={archivePopup.result}
+                onChange={e => setArchivePopup(p => ({ ...p, result: e.target.value }))}
+                style={{ width: '100%' }}
+              >
+                <option value="">-- Select Result --</option>
+                <option value="red">🔴 Loss</option>
+                <option value="orange">🟠 No Answer</option>
+                <option value="green">🟢 Gain</option>
+              </select>
+            </div>
+            <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <button onClick={() => setArchivePopup({ open: false, row: null, doctor: '', result: '' })} style={{ marginRight: 8 }}>Cancel</button>
+              <button
+                disabled={!archivePopup.doctor || !archivePopup.result}
+                onClick={async () => {
+                  const row = archivePopup.row;
+                  // 1. Update assigned_to
+                  await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/assigned_to`, { assigned_to: archivePopup.doctor });
+                  // 2. Optionally store result color
+                  try {
+                    await axios.post(`http://127.0.0.1:5000/api/row/${row.id}/archive_result`, { result_color: archivePopup.result });
+                  } catch (e) { /* ignore if endpoint doesn't exist */ }
+                  // 3. Archive the row with correct headers and JSON body
+                  try {
+                    await axios.post(
+                      `http://127.0.0.1:5000/api/row/${row.id}/archive`,
+                      { archive_result: archivePopup.result },
+                      { headers: { 'Content-Type': 'application/json' } }
+                    );
+                  } catch (err) {
+                    alert('Failed to archive row.');
+                    return;
+                  }
+                  setArchivePopup({ open: false, row: null, doctor: '', result: '' });
+                  await fetchRows();
+                }}
+                style={{ background: (!archivePopup.doctor || !archivePopup.result) ? '#ccc' : '#2563eb', color: 'white', fontWeight: 600 }}
+              >Archive</button>
             </div>
           </div>
         </div>
