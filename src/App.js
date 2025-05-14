@@ -257,7 +257,7 @@ function App() {
             filter: 'drop-shadow(0 2px 8px #00c6fb33)',
             padding: '0.1em 0.3em',
           }}>
-            hang on <span style={{fontWeight: 900, letterSpacing: '0.06em'}}>MY LOFE</span> we are working on it
+            hang on <span style={{fontWeight: 900, letterSpacing: '0.06em'}}>tight</span> we are working on it
           </div>
           <Lottie animationData={loadingAnimData} style={{ width: 140, height: 140 }} loop={true} />
         </div>
