@@ -472,6 +472,11 @@ function App() {
       )}
       {rowsToDisplay.length > 0 && (
         <div className="table-container">
+          <div style={{ fontSize: '0.97em', color: '#888', fontWeight: 400, marginBottom: 2, marginLeft: 8 }}>
+            {view === 'active'
+              ? `${activeRows.length} entries`
+              : `${archivedRows.length} entries`}
+          </div>
           <table>
             <thead>
               <tr>
