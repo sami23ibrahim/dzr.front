@@ -5,6 +5,7 @@ import Lottie from "lottie-react";
 
 // Set the backend API base URL
 const API_BASE_URL = 'https://dzr-backend.onrender.com';
+//const API_BASE_URL = 'http://localhost:5000';
 
 function App() {
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -20,6 +21,8 @@ function App() {
   const [loadingAnimData, setLoadingAnimData] = useState(null);
   const [archivePopup, setArchivePopup] = useState({ open: false, row: null, doctor: '', result: '' });
   const [colorFilter, setColorFilter] = useState('');
+  const [doctorOptions, setDoctorOptions] = useState([]); // All unique doctors
+  const [selectedDoctors, setSelectedDoctors] = useState([]); // Selected doctor values
 
   // Map internal doctor values to display names
   const doctorDisplayNames = {
@@ -28,10 +31,84 @@ function App() {
     "Dr. C": "Dr. Prabh"
   };
 
-  // Fetch all rows from backend on load
+  // Doctor filter logic
+  const doctorCheckboxes = [
+    { value: 'Dr. A', label: 'Dr. Hakam' },
+    { value: 'Dr. B', label: 'Dr. Fabian' },
+    { value: 'Dr. C', label: 'Dr. Prabh' },
+  ];
+  const [doctorMode, setDoctorMode] = useState('all'); // 'all' or 'custom'
+  const [checkedDoctors, setCheckedDoctors] = useState([]); // array of doctor values
+
+  // Manual entry modal state
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
+  const [manualEntryData, setManualEntryData] = useState({
+    Name: '',
+    'Rechnungsempfängers': '',
+    'Rechnungs-Nr. DZR': '',
+    'Ihre Rechnungs-Nr.': '',
+    Betrag: '',
+    'Billing Date': ''
+  });
+  const [manualEntryError, setManualEntryError] = useState('');
+  const [manualEntryFieldErrors, setManualEntryFieldErrors] = useState({});
+  const requiredFields = ['Name', 'Rechnungsempfängers', 'Rechnungs-Nr. DZR', 'Ihre Rechnungs-Nr.', 'Betrag', 'Billing Date'];
+
+  // Edit entry modal state
+  const [editEntryOpen, setEditEntryOpen] = useState(false);
+  const [editEntryData, setEditEntryData] = useState(null); // { ...fields, id }
+  const [editEntryError, setEditEntryError] = useState('');
+  const [editEntryFieldErrors, setEditEntryFieldErrors] = useState({});
+
+  // Edit entry validation (reuse manualEntry validation)
+  function validateEditEntry(data) {
+    return validateManualEntry(data);
+  }
+  const editEntryFieldErrorsCurrent = editEntryData ? validateEditEntry(editEntryData) : {};
+  const isEditEntryValid = editEntryData && Object.keys(editEntryFieldErrorsCurrent).length === 0;
+
+  // Field validation
+  function validateManualEntry(data) {
+    const errors = {};
+    // Name
+    if (!data.Name.trim()) errors.Name = 'Required';
+    // Rechnungsempfängers
+    if (!data['Rechnungsempfängers'].trim()) errors['Rechnungsempfängers'] = 'Required';
+    // Rechnungs-Nr. DZR: only digits and /
+    if (!data['Rechnungs-Nr. DZR'].trim()) {
+      errors['Rechnungs-Nr. DZR'] = 'Required';
+    } else if (!/^\d+(\/\d+)*$/.test(data['Rechnungs-Nr. DZR'].replace(/\s+/g, ''))) {
+      errors['Rechnungs-Nr. DZR'] = 'Only digits and / allowed (e.g. 123456/01/2024)';
+    }
+    // Ihre Rechnungs-Nr.
+    if (!data['Ihre Rechnungs-Nr.'].trim()) errors['Ihre Rechnungs-Nr.'] = 'Required';
+    // Betrag: must be a valid number (allow negative, decimal, comma or dot)
+    if (!data.Betrag.trim()) {
+      errors.Betrag = 'Required';
+    } else {
+      // Accept both dot and comma as decimal separator
+      const normalized = data.Betrag.replace(',', '.');
+      if (isNaN(normalized) || !/^[-]?\d+(\.|,)?\d*$/.test(data.Betrag)) {
+        errors.Betrag = 'Must be a valid number (e.g. -123.45)';
+      }
+    }
+    // Billing Date: strict DD.MM.YYYY
+    if (!data['Billing Date'].trim()) {
+      errors['Billing Date'] = 'Required';
+    } else if (!/^\d{2}\.\d{2}\.\d{4}$/.test(data['Billing Date'])) {
+      errors['Billing Date'] = 'Format must be DD.MM.YYYY (e.g. 01.01.2024)';
+    }
+    return errors;
+  }
+
+  const manualEntryFieldErrorsCurrent = validateManualEntry(manualEntryData);
+  const isManualEntryValid = Object.keys(manualEntryFieldErrorsCurrent).length === 0;
+
+  // Fetch all rows from backend on load or when doctor filter changes
   useEffect(() => {
     fetchRows();
-  }, []);
+    // eslint-disable-next-line
+  }, [view, doctorMode, checkedDoctors]);
 
   useEffect(() => {
     fetch(process.env.PUBLIC_URL + "/loading.json")
@@ -41,9 +118,27 @@ function App() {
 
   const fetchRows = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/api/rows`);
+      let url = `${API_BASE_URL}/api/rows`;
+      if (view === 'active') {
+        if (doctorMode === 'custom' && checkedDoctors.length > 0) {
+          url += `?assigned_to=${checkedDoctors.join(',')}`;
+        }
+        // If doctorMode is 'all', do not add assigned_to param
+      }
+      const res = await axios.get(url);
       setActiveRows(res.data.active);
       setArchivedRows(res.data.archived);
+      // Extract unique doctor values from activeRows (for filter UI)
+      if (view === 'active') {
+        const allDoctors = Array.from(new Set([
+          ...res.data.active.map(row => row.assigned_to).filter(Boolean)
+        ]));
+        setDoctorOptions(allDoctors);
+        // If no selection yet, select all by default
+        if (selectedDoctors.length === 0 && allDoctors.length > 0) {
+          setSelectedDoctors(allDoctors);
+        }
+      }
     } catch (err) {
       alert("Failed to fetch data from backend.");
       console.error(err);
@@ -128,11 +223,23 @@ function App() {
       setActiveRows(prev => [...prev, ...uniqueNewRows]);
       setSelectedFiles([]); // Clear after upload
       await fetchRows(); // Optionally, always re-fetch to stay in sync
-      if (res.data.invalid_files && res.data.invalid_files.length > 0) {
-        setNoDataMessage(res.data.invalid_files);
-      } else {
-        setNoDataMessage("");
-      }
+
+      // --- Updated invalid_files handling ---
+      const grouped = Array.isArray(res.data.invalid_files)
+  ? res.data.invalid_files.reduce((acc, file) => {
+      if (!acc[file.reason]) acc[file.reason] = [];
+      acc[file.reason].push(file.filename);
+      return acc;
+    }, {})
+  : {};
+
+let manualReviewList = [];
+if (Array.isArray(res.data.incomplete_entries_with_names) && res.data.incomplete_entries_with_names.length > 0) {
+  manualReviewList = res.data.incomplete_entries_with_names;
+}
+
+setNoDataMessage({ ...grouped, manualReviewList });
+
     } catch (err) {
       alert("Upload failed. See console for details.");
       console.error(err);
@@ -314,21 +421,87 @@ function App() {
           <button onClick={handleUpload} disabled={loading || !selectedFiles.length} style={{ marginBottom: 0 }}>
             {loading ? "Processing..." : "Upload & Extract"}
           </button>
-          {noDataMessage && typeof noDataMessage === 'string' && (
-            <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginTop: 12, fontWeight: 500, fontSize: '1.05em' }}>
-              {noDataMessage}
-            </div>
-          )}
-          {Array.isArray(noDataMessage) && noDataMessage.length > 0 && (
-            <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginTop: 12, fontWeight: 500, fontSize: '1.05em' }}>
-              No invoice data was found in the following file(s):
-              <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
-                {noDataMessage.map((fname, idx) => (
-                  <li key={fname + idx}>{fname}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+       {/* Show grouped invalid_files messages and manual review names */}
+{noDataMessage && typeof noDataMessage === 'object' && (
+  <div style={{
+    color: '#b91c1c',
+    background: '#fef2f2',
+    border: '1px solid #fca5a5',
+    borderRadius: 8,
+    padding: '10px 14px 10px 14px',
+    paddingRight: '32px',    // ADD extra right padding for the close button
+    marginTop: 12,
+    fontWeight: 500,
+    fontSize: '1.05em',
+    position: 'relative'
+  }}>
+    {/* Close button */}
+    <button
+      onClick={() => setNoDataMessage("")}
+      style={{
+        position: 'absolute',
+        top: 8,
+        right: 8,  // Use 8 for symmetry and to match the padding
+        background: 'none',
+        border: 'none',
+        fontSize: '1.25em', // Slightly larger for visibility
+        color: '#b91c1c',
+        cursor: 'pointer',
+        fontWeight: 700,
+        lineHeight: 1,
+        zIndex: 2,
+        padding: 0
+      }}
+      aria-label="Close"
+      title="Close"
+    >✕</button>
+  
+    {noDataMessage["no_data"] && (
+      <div style={{ marginBottom: noDataMessage["incomplete_entry"] ? 10 : 0 }}>
+        No invoice data was found in the following file(s):
+        <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+          {noDataMessage["no_data"].map((fname, idx) => (
+            <li key={fname + idx}>{fname}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {noDataMessage["incomplete_entry"] && (
+      <div>
+        The following files may contain corrupted data. Please handle them manually:
+        <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+          {noDataMessage["incomplete_entry"].map((fname, idx) => (
+            <li key={fname + idx}>{fname}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {noDataMessage.manualReviewList && noDataMessage.manualReviewList.length > 0 && (
+      <div style={{ marginTop: 10 }}>
+        <b>Manual review needed for these file(s):</b>
+        <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+          {noDataMessage.manualReviewList.map((item, idx) => (
+            <li key={item.filename + idx}>
+              {item.filename}
+              {item.added_names && item.added_names.length > 0 && (
+                <div style={{ marginLeft: 10, color: '#64748b', fontSize: '0.97em' }}>
+                  Added entries:
+                  <ul style={{ marginTop: 4 }}>
+                    {item.added_names.map((name, nidx) => (
+                      <li key={name + nidx}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </div>
+)}
+
+
         </div>
       )}
       <div className="app-container" style={{ position: 'relative' }}>
@@ -346,7 +519,7 @@ function App() {
             Archived
           </button>
         </div>
-        <h2>DZR TOOL</h2>
+        <h2>DZR x D3Z</h2>
         {/* Search bar */}
         <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8,color: "red" }}>
           <select value={searchField} onChange={e => setSearchField(e.target.value)}>
@@ -392,6 +565,51 @@ function App() {
               style={{ background: colorFilter === '' ? '#2563eb' : '#eee', color: colorFilter === '' ? 'white' : 'black', borderRadius: 8, padding: '2px 12px', border: 'none', fontWeight: 600 }}
               onClick={() => setColorFilter('')}
             >All</button>
+          </div>
+        )}
+        {/* Doctor filter for active view */}
+        {view === 'active' && (
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
+            <span style={{ fontWeight: 500 }}>Filter by Doctor:</span>
+            {/* All checkbox */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={doctorMode === 'all'}
+                onChange={e => {
+                  if (e.target.checked) {
+                    setDoctorMode('all');
+                    setCheckedDoctors([]);
+                  }
+                }}
+              />
+              All
+            </label>
+            {/* Doctor checkboxes */}
+            {doctorCheckboxes.map(doc => (
+              <label key={doc.value} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={doctorMode === 'custom' && checkedDoctors.includes(doc.value)}
+                  onChange={e => {
+                    let newChecked;
+                    if (e.target.checked) {
+                      newChecked = [...checkedDoctors, doc.value];
+                    } else {
+                      newChecked = checkedDoctors.filter(d => d !== doc.value);
+                    }
+                    if (newChecked.length === 0) {
+                      setDoctorMode('all');
+                      setCheckedDoctors([]);
+                    } else {
+                      setDoctorMode('custom');
+                      setCheckedDoctors(newChecked);
+                    }
+                  }}
+                />
+                {doc.label}
+              </label>
+            ))}
           </div>
         )}
       </div>
@@ -472,10 +690,28 @@ function App() {
       )}
       {rowsToDisplay.length > 0 && (
         <div className="table-container">
-          <div style={{ fontSize: '0.97em', color: '#888', fontWeight: 400, marginBottom: 2, marginLeft: 8 }}>
-            {view === 'active'
-              ? `${activeRows.length} entries`
-              : `${archivedRows.length} entries`}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 2, marginLeft: 8, gap: 18 }}>
+            <button
+              style={{
+                color: '#2563eb',
+                background: 'none',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '1em',
+                height: 'auto',
+                padding: 0,
+                cursor: 'pointer',
+                marginRight: 10
+              }}
+              onClick={() => { setManualEntryOpen(true); setManualEntryError(''); }}
+            >
+              + Add Entry
+            </button>
+            <span style={{ fontSize: '0.97em', color: '#888', fontWeight: 400 }}>
+              {view === 'active'
+                ? `${activeRows.length} entries`
+                : `${archivedRows.length} entries`}
+            </span>
           </div>
           <table>
             <thead>
@@ -506,7 +742,28 @@ function App() {
                       onClick={() => handleToggleStarred(row)}
                     >★</span>
                   </td>
-                  <td>{row["Name"]}</td>
+                  <td style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {row["Name"]}
+                    <span
+                      style={{ cursor: 'pointer', color: '#2563eb', fontSize: '1.1em', marginLeft: 4 }}
+                      title="Edit Entry"
+                      onClick={() => {
+                        setEditEntryData({
+                          id: row.id,
+                          Name: row["Name"] || '',
+                          'Rechnungsempfängers': row["Rechnungsempfängers"] || '',
+                          'Rechnungs-Nr. DZR': row["Rechnungs-Nr. DZR"] || '',
+                          'Ihre Rechnungs-Nr.': row["Ihre Rechnungs-Nr."] || '',
+                          Betrag: row["Betrag"] || '',
+                          'Billing Date': row["Billing Date"] || ''
+                        });
+                        setEditEntryError('');
+                        setEditEntryOpen(true);
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.85 2.85a1.2 1.2 0 0 1 1.7 1.7l-1.1 1.1-1.7-1.7 1.1-1.1Zm-2.1 2.1 1.7 1.7-8.1 8.1c-.13.13-.23.3-.27.48l-.4 2.1a.5.5 0 0 0 .6.6l2.1-.4c.18-.04.35-.14.48-.27l8.1-8.1-1.7-1.7-8.1 8.1c-.13.13-.23.3-.27.48l-.4 2.1a.5.5 0 0 0 .6.6l2.1-.4c.18-.04.35-.14.48-.27l8.1-8.1Z" fill="#2563eb"/></svg>
+                    </span>
+                  </td>
                   <td>{row["Rechnungsempfängers"]}</td>
                   <td>{row["Rechnungs-Nr. DZR"]}</td>
                   <td>{row["Ihre Rechnungs-Nr."]}</td>
@@ -660,6 +917,206 @@ function App() {
                 style={{ background: (!archivePopup.doctor || !archivePopup.result) ? '#ccc' : '#2563eb', color: 'white', fontWeight: 600 }}
               >Archive</button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Manual Entry Modal */}
+      {manualEntryOpen && (
+        <div className="popup-overlay">
+          <div className="popup-card" style={{ minWidth: 540, maxWidth: 700 }}>
+            <h3>Add Manual Invoice Entry</h3>
+            <form onSubmit={async e => {
+              e.preventDefault();
+              setManualEntryError('');
+              setManualEntryFieldErrors(manualEntryFieldErrorsCurrent);
+              if (!isManualEntryValid) {
+                setManualEntryError('Please fill all required fields correctly.');
+                return;
+              }
+              try {
+                const res = await axios.post(`${API_BASE_URL}/api/manual_entry`, manualEntryData);
+                if (res.data && res.data.success) {
+                  setManualEntryOpen(false);
+                  setManualEntryData({
+                    Name: '',
+                    'Rechnungsempfängers': '',
+                    'Rechnungs-Nr. DZR': '',
+                    'Ihre Rechnungs-Nr.': '',
+                    Betrag: '',
+                    'Billing Date': ''
+                  });
+                  setManualEntryFieldErrors({});
+                  await fetchRows();
+                } else {
+                  setManualEntryError(res.data && res.data.error ? res.data.error : 'Unknown error.');
+                }
+              } catch (err) {
+                setManualEntryError('Failed to add entry. Please check your input and try again.');
+              }
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <label>
+                  Name*<br />
+                  <input type="text" value={manualEntryData.Name} onChange={e => setManualEntryData(d => ({ ...d, Name: e.target.value }))} required />
+                  {manualEntryFieldErrorsCurrent.Name && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{manualEntryFieldErrorsCurrent.Name}</span>}
+                </label>
+                <label>
+                  Rechnungsempfängers*<br />
+                  <input type="text" value={manualEntryData['Rechnungsempfängers']} onChange={e => setManualEntryData(d => ({ ...d, 'Rechnungsempfängers': e.target.value }))} required />
+                  {manualEntryFieldErrorsCurrent['Rechnungsempfängers'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{manualEntryFieldErrorsCurrent['Rechnungsempfängers']}</span>}
+                </label>
+                <label>
+                  Rechnungs-Nr. DZR*<br />
+                  <input
+                    type="text"
+                    value={manualEntryData['Rechnungs-Nr. DZR']}
+                    onChange={e => {
+                      // Only allow digits and /
+                      const val = e.target.value.replace(/[^\d\/]/g, '');
+                      setManualEntryData(d => ({ ...d, 'Rechnungs-Nr. DZR': val }));
+                    }}
+                    required
+                  />
+                  {manualEntryFieldErrorsCurrent['Rechnungs-Nr. DZR'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{manualEntryFieldErrorsCurrent['Rechnungs-Nr. DZR']}</span>}
+                </label>
+                <label>
+                  Ihre Rechnungs-Nr.*<br />
+                  <input type="text" value={manualEntryData['Ihre Rechnungs-Nr.']} onChange={e => setManualEntryData(d => ({ ...d, 'Ihre Rechnungs-Nr.': e.target.value }))} required />
+                  {manualEntryFieldErrorsCurrent['Ihre Rechnungs-Nr.'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{manualEntryFieldErrorsCurrent['Ihre Rechnungs-Nr.']}</span>}
+                </label>
+                <label>
+                  Betrag*<br />
+                  <input
+                    type="text"
+                    value={manualEntryData.Betrag}
+                    onChange={e => setManualEntryData(d => ({ ...d, Betrag: e.target.value }))}
+                    required
+                  />
+                  {manualEntryFieldErrorsCurrent.Betrag && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{manualEntryFieldErrorsCurrent.Betrag}</span>}
+                </label>
+                <label>
+                  Billing Date*<br />
+                  <input
+                    type="text"
+                    value={manualEntryData['Billing Date']}
+                    onChange={e => {
+                      // Only allow numbers and .
+                      let val = e.target.value.replace(/[^\d\.]/g, '');
+                      // Enforce max length 10 (DD.MM.YYYY)
+                      if (val.length > 10) val = val.slice(0, 10);
+                      setManualEntryData(d => ({ ...d, 'Billing Date': val }));
+                    }}
+                    maxLength={10}
+                    placeholder="DD.MM.YYYY"
+                    required
+                  />
+                  {manualEntryFieldErrorsCurrent['Billing Date'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{manualEntryFieldErrorsCurrent['Billing Date']}</span>}
+                </label>
+                {manualEntryError && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 12px', fontWeight: 500 }}>{manualEntryError}</div>}
+              </div>
+              <div style={{ marginTop: 18, textAlign: 'right' }}>
+                <button type="button" onClick={() => setManualEntryOpen(false)} style={{ marginRight: 8 }}>Cancel</button>
+                <button type="submit" disabled={!isManualEntryValid} style={{ background: isManualEntryValid ? '#2563eb' : '#ccc', color: 'white', fontWeight: 600 }}>
+                  Submit
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Entry Modal */}
+      {editEntryOpen && editEntryData && (
+        <div className="popup-overlay">
+          <div className="popup-card" style={{ minWidth: 540, maxWidth: 700 }}>
+            <h3>Edit Invoice Entry</h3>
+            <form onSubmit={async e => {
+              e.preventDefault();
+              setEditEntryError('');
+              setEditEntryFieldErrors(editEntryFieldErrorsCurrent);
+              if (!isEditEntryValid) {
+                setEditEntryError('Please fill all required fields correctly.');
+                return;
+              }
+              try {
+                const res = await axios.post(`${API_BASE_URL}/api/row/${editEntryData.id}/edit`, editEntryData);
+                if (res.data && res.data.success) {
+                  setEditEntryOpen(false);
+                  setEditEntryData(null);
+                  setEditEntryFieldErrors({});
+                  await fetchRows();
+                } else {
+                  setEditEntryError(res.data && res.data.error ? res.data.error : 'Unknown error.');
+                }
+              } catch (err) {
+                setEditEntryError('Failed to update entry. Please check your input and try again.');
+              }
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <label>
+                  Name*<br />
+                  <input type="text" value={editEntryData.Name} onChange={e => setEditEntryData(d => ({ ...d, Name: e.target.value }))} required />
+                  {editEntryFieldErrorsCurrent.Name && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{editEntryFieldErrorsCurrent.Name}</span>}
+                </label>
+                <label>
+                  Rechnungsempfängers*<br />
+                  <input type="text" value={editEntryData['Rechnungsempfängers']} onChange={e => setEditEntryData(d => ({ ...d, 'Rechnungsempfängers': e.target.value }))} required />
+                  {editEntryFieldErrorsCurrent['Rechnungsempfängers'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{editEntryFieldErrorsCurrent['Rechnungsempfängers']}</span>}
+                </label>
+                <label>
+                  Rechnungs-Nr. DZR*<br />
+                  <input
+                    type="text"
+                    value={editEntryData['Rechnungs-Nr. DZR']}
+                    onChange={e => {
+                      // Only allow digits and /
+                      const val = e.target.value.replace(/[^\d\/]/g, '');
+                      setEditEntryData(d => ({ ...d, 'Rechnungs-Nr. DZR': val }));
+                    }}
+                    required
+                  />
+                  {editEntryFieldErrorsCurrent['Rechnungs-Nr. DZR'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{editEntryFieldErrorsCurrent['Rechnungs-Nr. DZR']}</span>}
+                </label>
+                <label>
+                  Ihre Rechnungs-Nr.*<br />
+                  <input type="text" value={editEntryData['Ihre Rechnungs-Nr.']} onChange={e => setEditEntryData(d => ({ ...d, 'Ihre Rechnungs-Nr.': e.target.value }))} required />
+                  {editEntryFieldErrorsCurrent['Ihre Rechnungs-Nr.'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{editEntryFieldErrorsCurrent['Ihre Rechnungs-Nr.']}</span>}
+                </label>
+                <label>
+                  Betrag*<br />
+                  <input
+                    type="text"
+                    value={editEntryData.Betrag}
+                    onChange={e => setEditEntryData(d => ({ ...d, Betrag: e.target.value }))}
+                    required
+                  />
+                  {editEntryFieldErrorsCurrent.Betrag && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{editEntryFieldErrorsCurrent.Betrag}</span>}
+                </label>
+                <label>
+                  Billing Date*<br />
+                  <input
+                    type="text"
+                    value={editEntryData['Billing Date']}
+                    onChange={e => {
+                      // Only allow numbers and .
+                      let val = e.target.value.replace(/[^\d\.]/g, '');
+                      if (val.length > 10) val = val.slice(0, 10);
+                      setEditEntryData(d => ({ ...d, 'Billing Date': val }));
+                    }}
+                    maxLength={10}
+                    placeholder="DD.MM.YYYY"
+                    required
+                  />
+                  {editEntryFieldErrorsCurrent['Billing Date'] && <span style={{ color: '#b91c1c', fontSize: '0.97em' }}>{editEntryFieldErrorsCurrent['Billing Date']}</span>}
+                </label>
+                {editEntryError && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 12px', fontWeight: 500 }}>{editEntryError}</div>}
+              </div>
+              <div style={{ marginTop: 18, textAlign: 'right' }}>
+                <button type="button" onClick={() => setEditEntryOpen(false)} style={{ marginRight: 8 }}>Cancel</button>
+                <button type="submit" disabled={!isEditEntryValid} style={{ background: isEditEntryValid ? '#2563eb' : '#ccc', color: 'white', fontWeight: 600 }}>
+                  Submit
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
