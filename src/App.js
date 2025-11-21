@@ -62,6 +62,11 @@ function App() {
 
   // Edit archive result state
   const [editArchiveResultRow, setEditArchiveResultRow] = useState(null); // { id, current_result }
+  
+  // Debug: log when state changes
+  useEffect(() => {
+    console.log('editArchiveResultRow changed:', editArchiveResultRow);
+  }, [editArchiveResultRow]);
 
   // Edit entry validation (reuse manualEntry validation)
   function validateEditEntry(data) {
@@ -863,7 +868,11 @@ setNoDataMessage({ ...grouped, manualReviewList });
                               transition: 'border 0.2s'
                             }}
                             title="Click to edit result"
-                            onClick={() => setEditArchiveResultRow({ id: row.id, current_result: row.archive_result })}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('Clicked archive result for row:', row.id);
+                              setEditArchiveResultRow({ id: row.id, current_result: row.archive_result });
+                            }}
                             onMouseEnter={e => e.target.style.border = '2px solid #2563eb'}
                             onMouseLeave={e => e.target.style.border = '2px solid transparent'}
                           />
