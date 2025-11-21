@@ -882,7 +882,7 @@ setNoDataMessage({ ...grouped, manualReviewList });
                               style={{
                                 position: 'absolute',
                                 top: '100%',
-                                left: 0,
+                                right: 0,
                                 zIndex: 100,
                                 background: 'white',
                                 border: '1px solid #e0e0e0',
