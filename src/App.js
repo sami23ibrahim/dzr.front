@@ -60,6 +60,9 @@ function App() {
   const [editEntryError, setEditEntryError] = useState('');
   const [editEntryFieldErrors, setEditEntryFieldErrors] = useState({});
 
+  // Edit archive result state
+  const [editArchiveResultRow, setEditArchiveResultRow] = useState(null); // { id, current_result }
+
   // Edit entry validation (reuse manualEntry validation)
   function validateEditEntry(data) {
     return validateManualEntry(data);
@@ -115,6 +118,19 @@ function App() {
       .then(res => res.json())
       .then(setLoadingAnimData);
   }, []);
+
+  // Close archive result editor when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (editArchiveResultRow && !e.target.closest('[data-archive-result-editor]')) {
+        setEditArchiveResultRow(null);
+      }
+    };
+    if (editArchiveResultRow) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [editArchiveResultRow]);
 
   const fetchRows = async () => {
     try {
@@ -290,6 +306,18 @@ setNoDataMessage({ ...grouped, manualReviewList });
       await fetchRows();
     } catch (err) {
       alert("Failed to update star.");
+      console.error(err);
+    }
+  };
+
+  // Handle archive result change
+  const handleArchiveResultChange = async (rowId, newResult) => {
+    try {
+      await axios.post(`${API_BASE_URL}/api/row/${rowId}/archive_result`, { archive_result: newResult });
+      setEditArchiveResultRow(null);
+      await fetchRows();
+    } catch (err) {
+      alert('Failed to update archive result.');
       console.error(err);
     }
   };
@@ -814,24 +842,77 @@ setNoDataMessage({ ...grouped, manualReviewList });
                   </td>
                   {view === 'archived' && (
                     <td>
-                      {row.archive_result && ['red', 'green', 'orange'].includes(row.archive_result) && (
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            width: 16,
-                            height: 16,
-                            borderRadius: '50%',
-                            backgroundColor:
-                              row.archive_result === 'red'
-                                ? 'red'
-                                : row.archive_result === 'green'
-                                ? 'green'
-                                : row.archive_result === 'orange'
-                                ? 'orange'
-                                : 'transparent',
-                          }}
-                        />
-                      )}
+                      {row.archive_result && ['red', 'green', 'orange'].includes(row.archive_result) ? (
+                        <div style={{ position: 'relative' }}>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: 16,
+                              height: 16,
+                              borderRadius: '50%',
+                              backgroundColor:
+                                row.archive_result === 'red'
+                                  ? 'red'
+                                  : row.archive_result === 'green'
+                                  ? 'green'
+                                  : row.archive_result === 'orange'
+                                  ? 'orange'
+                                  : 'transparent',
+                              cursor: 'pointer',
+                              border: '2px solid transparent',
+                              transition: 'border 0.2s'
+                            }}
+                            title="Click to edit result"
+                            onClick={() => setEditArchiveResultRow({ id: row.id, current_result: row.archive_result })}
+                            onMouseEnter={e => e.target.style.border = '2px solid #2563eb'}
+                            onMouseLeave={e => e.target.style.border = '2px solid transparent'}
+                          />
+                          {editArchiveResultRow && editArchiveResultRow.id === row.id && (
+                            <div 
+                              data-archive-result-editor
+                              style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                zIndex: 100,
+                                background: 'white',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: 8,
+                                padding: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 6,
+                                minWidth: 120
+                              }}>
+                              <button
+                                style={{ background: '#fee', color: 'red', border: '1px solid red', fontWeight: 600, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}
+                                onClick={() => handleArchiveResultChange(row.id, 'red')}
+                              >
+                                🔴 Loss
+                              </button>
+                              <button
+                                style={{ background: '#efe', color: 'green', border: '1px solid green', fontWeight: 600, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}
+                                onClick={() => handleArchiveResultChange(row.id, 'green')}
+                              >
+                                🟢 Gain
+                              </button>
+                              <button
+                                style={{ background: '#ffedd5', color: 'orange', border: '1px solid orange', fontWeight: 600, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}
+                                onClick={() => handleArchiveResultChange(row.id, 'orange')}
+                              >
+                                🟠 No Answer
+                              </button>
+                              <button
+                                style={{ background: '#f5f5f5', color: '#666', border: '1px solid #ccc', fontWeight: 500, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', marginTop: 4 }}
+                                onClick={() => setEditArchiveResultRow(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </td>
                   )}
                 </tr>
